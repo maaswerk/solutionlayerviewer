@@ -1,12 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.Composition;
-using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
+using SolutionLayerViewer.Controls;
 using SolutionLayerViewer.Models;
+using SolutionLayerViewer.UI;
 using XrmToolBox.Extensibility;
 
 namespace SolutionLayerViewer
@@ -14,15 +15,16 @@ namespace SolutionLayerViewer
     [Export(typeof(IXrmToolBoxPlugin))]
     [ExportMetadata("Name", "Solution Layer Viewer")]
     [ExportMetadata("Description", "Lists the components of a solution and shows the solution layer stack for the selected component.")]
-    public class PluginControl : PluginControlBase
+    public partial class PluginControl : PluginControlBase
     {
-        private ComboBox _solutionComboBox;
-        private DataGridView _componentsGrid;
-        private DataGridView _layersGrid;
+        private List<SolutionComponentItem> _allComponents = new List<SolutionComponentItem>();
 
         public PluginControl()
         {
             InitializeComponent();
+            ConfigureGrid();
+            WireEvents();
+            CueBanner.Set(filterTextBox, "Filter components…");
         }
 
         public override void UpdateConnection(IOrganizationService newService, ConnectionDetail detail, string actionName, object parameter)
@@ -31,87 +33,35 @@ namespace SolutionLayerViewer
             LoadSolutions();
         }
 
-        private void InitializeComponent()
+        private void ConfigureGrid()
         {
-            SuspendLayout();
-
-            var topPanel = new Panel { Dock = DockStyle.Top, Height = 36 };
-
-            var solutionLabel = new Label { Text = "Solution:", AutoSize = true, Location = new Point(8, 11) };
-
-            _solutionComboBox = new ComboBox
+            componentsGrid.Columns.Add(new DataGridViewTextBoxColumn
             {
-                DropDownStyle = ComboBoxStyle.DropDownList,
-                Location = new Point(70, 7),
-                Width = 380,
-                DisplayMember = nameof(SolutionListItem.FriendlyName)
-            };
-            _solutionComboBox.SelectedIndexChanged += (s, e) => LoadComponents();
+                Name = "ComponentType",
+                HeaderText = "Component type",
+                DataPropertyName = nameof(SolutionComponentItem.ComponentType),
+                FillWeight = 55
+            });
+            componentsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "ObjectId",
+                HeaderText = "Object id",
+                DataPropertyName = nameof(SolutionComponentItem.ObjectId),
+                FillWeight = 45
+            });
+        }
 
-            var refreshButton = new Button { Text = "Reload solutions", Location = new Point(460, 6), Width = 130 };
+        private void WireEvents()
+        {
+            solutionComboBox.SelectedIndexChanged += (s, e) => LoadComponents();
             refreshButton.Click += (s, e) => LoadSolutions();
+            filterTextBox.TextChanged += (s, e) => ApplyFilter();
+            componentsGrid.SelectionChanged += (s, e) => LoadLayers();
+        }
 
-            topPanel.Controls.Add(solutionLabel);
-            topPanel.Controls.Add(_solutionComboBox);
-            topPanel.Controls.Add(refreshButton);
-
-            var splitContainer = new SplitContainer
-            {
-                Dock = DockStyle.Fill,
-                Orientation = Orientation.Vertical,
-                SplitterDistance = 420
-            };
-
-            _componentsGrid = new DataGridView
-            {
-                Dock = DockStyle.Fill,
-                ReadOnly = true,
-                AllowUserToAddRows = false,
-                AllowUserToDeleteRows = false,
-                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-                MultiSelect = false,
-                AutoGenerateColumns = false,
-                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
-            };
-            _componentsGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "ComponentType", HeaderText = "Component type", DataPropertyName = nameof(SolutionComponentItem.ComponentType) });
-            _componentsGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "ObjectId", HeaderText = "Object id", DataPropertyName = nameof(SolutionComponentItem.ObjectId) });
-            _componentsGrid.SelectionChanged += (s, e) => LoadLayers();
-
-            _layersGrid = new DataGridView
-            {
-                Dock = DockStyle.Fill,
-                ReadOnly = true,
-                AllowUserToAddRows = false,
-                AllowUserToDeleteRows = false,
-                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-                AutoGenerateColumns = false,
-                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
-            };
-            _layersGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Order", HeaderText = "#", DataPropertyName = nameof(SolutionLayerItem.Order), FillWeight = 10 });
-            _layersGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "SolutionName", HeaderText = "Solution", DataPropertyName = nameof(SolutionLayerItem.SolutionName) });
-            _layersGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "IsManaged", HeaderText = "Managed", DataPropertyName = nameof(SolutionLayerItem.IsManaged), FillWeight = 20 });
-            _layersGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "VersionText", HeaderText = "Version", DataPropertyName = nameof(SolutionLayerItem.VersionText) });
-            _layersGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Publisher", HeaderText = "Publisher", DataPropertyName = nameof(SolutionLayerItem.Publisher) });
-
-            var layersLabel = new Label
-            {
-                Dock = DockStyle.Top,
-                Height = 20,
-                Text = "Layers for selected component",
-                Font = new Font(Font, FontStyle.Bold)
-            };
-
-            var rightPanel = new Panel { Dock = DockStyle.Fill };
-            rightPanel.Controls.Add(_layersGrid);
-            rightPanel.Controls.Add(layersLabel);
-
-            splitContainer.Panel1.Controls.Add(_componentsGrid);
-            splitContainer.Panel2.Controls.Add(rightPanel);
-
-            Controls.Add(splitContainer);
-            Controls.Add(topPanel);
-
-            ResumeLayout(false);
+        private void SetStatus(string text)
+        {
+            statusLabel.Text = text;
         }
 
         private void LoadSolutions()
@@ -120,6 +70,8 @@ namespace SolutionLayerViewer
             {
                 return;
             }
+
+            SetStatus("Loading solutions…");
 
             WorkAsync(new WorkAsyncInfo
             {
@@ -143,6 +95,7 @@ namespace SolutionLayerViewer
                     if (args.Error != null)
                     {
                         MessageBox.Show(this, args.Error.Message, "Error loading solutions", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        SetStatus("Failed to load solutions.");
                         return;
                     }
 
@@ -150,19 +103,23 @@ namespace SolutionLayerViewer
                         .Select(e => new SolutionListItem(e))
                         .ToList();
 
-                    _solutionComboBox.DataSource = solutions;
-                    _componentsGrid.DataSource = null;
-                    _layersGrid.DataSource = null;
+                    solutionComboBox.DataSource = solutions;
+                    _allComponents.Clear();
+                    componentsGrid.DataSource = null;
+                    ClearLayers("Select a component on the left to see its layer stack.");
+                    SetStatus($"{solutions.Count} solution(s) loaded.");
                 }
             });
         }
 
         private void LoadComponents()
         {
-            if (Service == null || !(_solutionComboBox.SelectedItem is SolutionListItem solution))
+            if (Service == null || !(solutionComboBox.SelectedItem is SolutionListItem solution))
             {
                 return;
             }
+
+            SetStatus($"Loading components of '{solution.FriendlyName}'…");
 
             WorkAsync(new WorkAsyncInfo
             {
@@ -185,27 +142,47 @@ namespace SolutionLayerViewer
                     if (args.Error != null)
                     {
                         MessageBox.Show(this, args.Error.Message, "Error loading components", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        SetStatus("Failed to load components.");
                         return;
                     }
 
-                    var components = ((IEnumerable<Entity>)args.Result)
+                    _allComponents = ((IEnumerable<Entity>)args.Result)
                         .Select(e => new SolutionComponentItem(e))
                         .OrderBy(c => c.ComponentType)
                         .ToList();
 
-                    _componentsGrid.DataSource = components;
-                    _layersGrid.DataSource = null;
+                    filterTextBox.Text = string.Empty;
+                    ApplyFilter();
+                    ClearLayers("Select a component on the left to see its layer stack.");
+                    SetStatus($"{_allComponents.Count} component(s) in '{solution.FriendlyName}'.");
                 }
             });
         }
 
+        private void ApplyFilter()
+        {
+            var filter = filterTextBox.Text?.Trim();
+
+            var filtered = string.IsNullOrEmpty(filter)
+                ? _allComponents
+                : _allComponents
+                    .Where(c => c.ComponentType.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0
+                                || c.ObjectId.ToString().IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0)
+                    .ToList();
+
+            componentsGrid.DataSource = null;
+            componentsGrid.DataSource = filtered;
+        }
+
         private void LoadLayers()
         {
-            if (Service == null || !(_componentsGrid.CurrentRow?.DataBoundItem is SolutionComponentItem component))
+            if (Service == null || !(componentsGrid.CurrentRow?.DataBoundItem is SolutionComponentItem component))
             {
-                _layersGrid.DataSource = null;
+                ClearLayers("Select a component on the left to see its layer stack.");
                 return;
             }
+
+            SetStatus("Loading layers…");
 
             WorkAsync(new WorkAsyncInfo
             {
@@ -237,6 +214,7 @@ namespace SolutionLayerViewer
                     if (args.Error != null)
                     {
                         MessageBox.Show(this, args.Error.Message, "Error loading layers", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        SetStatus("Failed to load layers.");
                         return;
                     }
 
@@ -256,8 +234,63 @@ namespace SolutionLayerViewer
                         layers[i].Order = i + 1;
                     }
 
-                    _layersGrid.DataSource = layers;
+                    ShowLayers(component, layers);
+                    SetStatus($"{layers.Count} layer(s) for {component.ComponentType} {component.ObjectId}.");
                 }
+            });
+        }
+
+        private void ShowLayers(SolutionComponentItem component, List<SolutionLayerItem> layers)
+        {
+            layersFlowPanel.SuspendLayout();
+            layersFlowPanel.Controls.Clear();
+
+            if (layers.Count == 0)
+            {
+                layersFlowPanel.Controls.Add(new Label
+                {
+                    AutoSize = true,
+                    Font = Theme.FontRegular,
+                    ForeColor = Theme.TextMuted,
+                    Margin = new Padding(6, 12, 6, 6),
+                    Text = $"No layers found for this {component.ComponentType.ToLowerInvariant()}."
+                });
+            }
+            else
+            {
+                foreach (var layer in layers)
+                {
+                    var card = new LayerCardControl { Width = Math.Max(200, layersFlowPanel.ClientSize.Width - 24) };
+                    card.SetLayer(layer, layer.Order == 1);
+                    layersFlowPanel.Controls.Add(card);
+                }
+
+                layersFlowPanel.Resize -= LayersFlowPanel_Resize;
+                layersFlowPanel.Resize += LayersFlowPanel_Resize;
+            }
+
+            layersFlowPanel.ResumeLayout(true);
+        }
+
+        private void LayersFlowPanel_Resize(object sender, EventArgs e)
+        {
+            var width = Math.Max(200, layersFlowPanel.ClientSize.Width - 24);
+            foreach (LayerCardControl card in layersFlowPanel.Controls.OfType<LayerCardControl>())
+            {
+                card.Width = width;
+            }
+        }
+
+        private void ClearLayers(string message)
+        {
+            layersFlowPanel.Controls.Clear();
+            layersFlowPanel.Controls.Add(new Label
+            {
+                AutoSize = true,
+                Font = Theme.FontRegular,
+                ForeColor = Theme.TextMuted,
+                Margin = new Padding(6, 12, 6, 6),
+                Text = message
             });
         }
     }
