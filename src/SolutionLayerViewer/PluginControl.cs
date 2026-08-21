@@ -3,12 +3,14 @@ using System.Collections.Generic;
 using System.ComponentModel.Composition;
 using System.Linq;
 using System.Windows.Forms;
+using McTools.Xrm.Connection;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 using SolutionLayerViewer.Controls;
 using SolutionLayerViewer.Models;
 using SolutionLayerViewer.UI;
 using XrmToolBox.Extensibility;
+using XrmToolBox.Extensibility.Interfaces;
 
 namespace SolutionLayerViewer
 {
@@ -247,7 +249,7 @@ namespace SolutionLayerViewer
 
             if (layers.Count == 0)
             {
-                layersFlowPanel.Controls.Add(new Label
+                layersFlowPanel.Controls.Add(new System.Windows.Forms.Label
                 {
                     AutoSize = true,
                     Font = Theme.FontRegular,
@@ -284,7 +286,7 @@ namespace SolutionLayerViewer
         private void ClearLayers(string message)
         {
             layersFlowPanel.Controls.Clear();
-            layersFlowPanel.Controls.Add(new Label
+            layersFlowPanel.Controls.Add(new System.Windows.Forms.Label
             {
                 AutoSize = true,
                 Font = Theme.FontRegular,
