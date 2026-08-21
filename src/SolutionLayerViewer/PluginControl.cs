@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel.Composition;
 using System.Linq;
 using System.Windows.Forms;
 using McTools.Xrm.Connection;
@@ -10,13 +9,9 @@ using SolutionLayerViewer.Controls;
 using SolutionLayerViewer.Models;
 using SolutionLayerViewer.UI;
 using XrmToolBox.Extensibility;
-using XrmToolBox.Extensibility.Interfaces;
 
 namespace SolutionLayerViewer
 {
-    [Export(typeof(IXrmToolBoxPlugin))]
-    [ExportMetadata("Name", "Solution Layer Viewer")]
-    [ExportMetadata("Description", "Lists the components of a solution and shows the solution layer stack for the selected component.")]
     public partial class PluginControl : PluginControlBase
     {
         private List<SolutionComponentItem> _allComponents = new List<SolutionComponentItem>();
